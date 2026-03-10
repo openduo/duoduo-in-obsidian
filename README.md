@@ -1,85 +1,119 @@
-# obsidian-agent-chat 插件
+# duoduo-in-obsidian
 
-让 Obsidian 成为 Agent 的原生对话界面。
+让 Obsidian 成为 duoduo agent 的原生对话界面。对话直接写入当前 Markdown 笔记，与笔记内容融为一体。
 
-## 设计意图
+## 设计思路
 
-对话直接以 Markdown callout 形式写入笔记文件，而不是在独立的侧边栏 UI 中。
+大多数 AI 插件把对话放在独立的侧边栏，这意味着你的对话和笔记是两个世界。
+
+这个插件反过来：**对话就是笔记**。每条消息直接写入当前打开的 `.md` 文件，用普通 Markdown 记录，随时可以编辑、引用、搜索。
+
+### 消息格式
+
+采用 HR 分隔格式，源码和渲染视图都保持干净：
+
+```markdown
+---
+**You** · 10:05
+
+帮我写一个防抖函数
+
+---
+**Agent** · 10:05
+
+好的，这是一个 TypeScript 实现：
+
+\`\`\`typescript
+function debounce<T extends (...args: unknown[]) => void>(fn: T, delay: number): T {
+  let timer: ReturnType<typeof setTimeout>;
+  return ((...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  }) as T;
+}
+\`\`\`
+```
+
+选择这个格式而不是 Callout (`> [!agent]`) 的原因：
+
+- **源码无噪音**：多行回复不需要每行都加 `> ` 前缀
+- **streaming 稳定**：流式输出是 append-only，不需要全文扫描重写，彻底消除跳动
+- **笔记可读**：文件可以直接分享或迁移，无需了解特殊语法
 
 ## 架构
 
 ```
-┌─────────────────────────────────────┐
-│  Obsidian Markdown 视图             │
-│                                     │
-│  # 我的笔记                          │
-│                                     │
-│  > [!agent-user]                    │
-│  > *2026-03-10T03:05:00Z*           │
-│  > 你好，帮我写个函数                │
-│                                     │
-│  > [!agent]                         │
-│  > *2026-03-10T03:05:02Z*           │
-│  > 好的，这是一个示例...             │
-│                                     │
-├─────────────────────────────────────┤
-│  [常驻输入栏: 与 Agent 对话...] [➤] │  ← EditorInputBar
-├─────────────────────────────────────┤
-│  状态: 就绪                          │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│  Obsidian Markdown 视图                  │
+│                                         │
+│  # 我的笔记                              │
+│                                         │
+│  ---                                    │
+│  **You** · 10:05                        │
+│                                         │
+│  帮我写一个防抖函数                       │
+│                                         │
+│  ---                                    │
+│  **Agent** · 10:05                      │
+│                                         │
+│  好的，这是一个实现...                    │
+│                                         │
+├─────────────────────────────────────────┤
+│  [与 Agent 对话... (Enter 发送)]   [发送] │  ← EditorInputBar
+├─────────────────────────────────────────┤
+│  状态: 就绪                              │
+└─────────────────────────────────────────┘
 ```
 
-## 组件
+## 前置条件
 
-| 组件 | 文件 | 说明 |
-|------|------|------|
-| RPC 客户端 | `src/agent/AgentClient.ts` | 用 `requestUrl` 绕过 CORS，调用 duoduo daemon 的 JSON-RPC |
-| 编辑器输入栏 | `src/ui/EditorInputBar.ts` | 底部常驻输入区，流式更新 callout |
-| Callout 格式化 | `src/markdown/ChatParser.ts` | 用户消息 `> [!agent-user]`，回复 `> [!agent]` |
-| 主插件 | `src/main.ts` | 自动附加到 Markdown 视图 |
+- **duoduo daemon** 在本地运行（默认 `http://127.0.0.1:20233`）
+- **Session Key**：格式为 `lark:oc_xxx:ou_xxx`，在插件设置中填写
+
+## 使用
+
+1. 打开任意 Markdown 文件，底部会出现输入栏
+2. 输入消息，按 `Enter` 发送（`Shift+Enter` 换行）
+3. 回复以流式方式实时写入当前文件
+4. 通过命令面板执行 `Create new chat note` 可快速新建对话笔记
+
+## 文件结构
+
+```
+src/
+├── main.ts                 # 插件入口，注册命令和事件
+├── agent/
+│   └── AgentClient.ts      # JSON-RPC 客户端，requestUrl + pull 轮询
+├── ui/
+│   └── EditorInputBar.ts   # 编辑器底部常驻输入栏
+├── markdown/
+│   ├── ChatParser.ts       # 消息格式化与解析（HR 格式）
+│   └── ChatUpdater.ts      # Vault 文件操作
+└── types/
+    ├── chat.ts             # 聊天领域类型
+    └── protocol.ts         # JSON-RPC 协议类型
+```
 
 ## 通信流程
 
 ```
 用户输入 → EditorInputBar → AgentClient.channel.ingress
-                                    ↓
-                            duoduo daemon
-                                    ↓
-                            AgentClient.channel.pull (轮询)
-                                    ↓
-EditorInputBar ← onMessage/onStreamEnd ← 流式/最终消息
-       ↓
-  更新编辑器中的 callout
+                                        ↓
+                                duoduo daemon
+                                        ↓
+                           AgentClient.channel.pull（长轮询）
+                                        ↓
+                     onStreamStart → 插入 HR header（记录 body 起始行）
+                     onMessage    → append-only 更新 body
+                     onStreamEnd  → 移除光标符，恢复就绪状态
 ```
 
-## 使用注意事项
+## 开发
 
-1. **必须配置 Session Key**：设置中填写有效的 `lark:oc_xxx:ou_xxx` 格式 session key
-2. **Markdown 视图即可**：只要是 Markdown 视图就显示输入栏，包括默认的编辑+预览分屏模式
-3. **Daemon 必须运行**：需要先启动 `duoduo daemon`（默认 `127.0.0.1:20233`）
-4. **快捷键**：`Cmd+I` 聚焦输入栏
-
-## 文件结构
-
+```bash
+bun install
+bun run dev     # 监听模式，自动重新构建
+bun run build   # 生产构建
 ```
-obsidian-agent-chat/
-├── src/
-│   ├── main.ts              # 插件入口，注册命令和事件
-│   ├── agent/
-│   │   ├── AgentClient.ts   # JSON-RPC 客户端（使用 requestUrl）
-│   │   └── index.ts
-│   ├── ui/
-│   │   ├── EditorInputBar.ts # 编辑器底部常驻输入栏
-│   │   └── index.ts
-│   ├── markdown/
-│   │   ├── ChatParser.ts    # 解析/格式化 callout
-│   │   ├── ChatUpdater.ts   # 更新 markdown 文件
-│   │   └── index.ts
-│   └── types/
-│       ├── protocol.ts      # JSON-RPC 协议类型
-│       ├── chat.ts          # 聊天领域类型和默认设置
-│       └── index.ts
-├── styles.css               # 输入栏和 callout 样式
-├── manifest.json
-└── main.js                  # 构建产物
-```
+
+构建产物 `main.js` 放入 Obsidian vault 的插件目录即可加载。

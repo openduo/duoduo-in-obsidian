@@ -149,5 +149,3 @@ export function formatStreamStart(role: MessageRole): string {
   return `---\n**${roleLabel}** · ${timeStr}\n\n`;
 }
 
-// 向后兼容：保留旧函数名，但使用新实现
-export const formatMessageAsCallout = formatMessageBlock;
