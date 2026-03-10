@@ -1,107 +1,73 @@
-import { App, Editor, MarkdownView, Notice, setIcon } from "obsidian";
-import type { PluginSettings } from "../types";
-import type { OutboxRecord, SessionExecutionEvent } from "@openduo/protocol";
-import { AgentClient } from "../agent";
-import { ChatUpdater, formatStreamStart, formatMessageBlock, formatToolUse } from "../markdown";
-import type { ChatMessage } from "../types";
+import { MarkdownView, setIcon } from "obsidian";
+
+export type StatusType = "processing" | "error";
 
 /**
- * 编辑器底部常驻输入栏
- * 用户在当前 markdown 文件中与 agent 对话，回复直接以 callout 形式写入文件
+ * 纯 UI 组件：渲染输入框、发送按钮、状态栏。
+ * 不持有 AgentClient 或编辑器引用，所有业务逻辑通过回调传出。
  */
 export class EditorInputBar {
   private containerEl: HTMLElement | null = null;
   private inputEl: HTMLTextAreaElement | null = null;
   private statusEl: HTMLElement | null = null;
   private sendBtn: HTMLButtonElement | null = null;
-  private client: AgentClient;
-  private updater: ChatUpdater;
-  private settings: PluginSettings;
-  private app: App;
-  private streamingBodyLine: number = -1;
-  private attachedView: MarkdownView | null = null;
-  // 节流渲染：pendingText 存最新累积文本，rafId 防止重复调度
-  private pendingText: string | null = null;
-  private rafId: number | null = null;
+  private isComposing = false;
 
-  constructor(app: App, settings: PluginSettings) {
-    this.app = app;
-    this.settings = settings;
-    this.client = new AgentClient(settings);
-    this.updater = new ChatUpdater(app);
-
-    this.client.setHandler({
-      onMessage: (record: OutboxRecord, accumulated: string) => {
-        this.updateStreamingCallout(accumulated);
-      },
-      onStreamStart: () => {
-        this.insertStreamingCallout();
-      },
-      onStreamEnd: (finalText: string, hadStreamChunks: boolean) => {
-        this.finalizeStreamingCallout(finalText, hadStreamChunks);
-      },
-      onToolUse: (event: SessionExecutionEvent) => {
-        this.handleToolUse(event);
-      },
-      onError: (error: Error) => {
-        this.setStatus(`错误: ${error.message}`, "error");
-        this.updateSendButton(false);
-      },
-    });
-  }
-
-  updateSettings(settings: PluginSettings): void {
-    this.settings = settings;
-    this.client.updateSettings(settings);
-  }
+  /** 用户触发发送时调用，参数为输入框内容 */
+  onSend: ((text: string) => void) | null = null;
 
   /**
-   * 将输入栏附加到 Markdown 视图
-   * 输入栏会附加到视图容器的底部，在编辑和默认模式下都可见
+   * 将输入栏渲染并挂载到指定 Markdown 视图底部
    */
-  attachToMarkdownView(view: MarkdownView): void {
-    // 如果已经附加到同一个视图，不做任何事
-    if (this.attachedView === view && this.containerEl) {
-      return;
-    }
-
-    // 先从旧视图分离
-    this.detach();
-
-    this.attachedView = view;
-
-    // 创建输入栏容器（使用 Obsidian DOM helper）
+  mount(view: MarkdownView): void {
+    this.destroy();
     this.containerEl = view.containerEl.createDiv({ cls: "agent-editor-input-bar" });
     this.render();
-
-    // 附加到视图容器底部（而不是编辑器容器内部）
     view.containerEl.appendChild(this.containerEl);
   }
 
   /**
-   * 从当前视图分离
+   * 从 DOM 移除并清理
    */
-  detach(): void {
-    if (this.containerEl) {
-      this.containerEl.remove();
-      this.containerEl = null;
-    }
-    this.attachedView = null;
-    this.streamingBodyLine = -1;
-    this.pendingText = null;
-    if (this.rafId !== null) {
-      window.cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
-    this.client.stop();
+  destroy(): void {
+    this.containerEl?.remove();
+    this.containerEl = null;
+    this.inputEl = null;
+    this.statusEl = null;
+    this.sendBtn = null;
+  }
+
+  setStatus(text: string, type?: StatusType): void {
+    if (!this.statusEl) return;
+    this.statusEl.textContent = text;
+    this.statusEl.className = "agent-editor-status";
+    if (type) this.statusEl.addClass(type);
+  }
+
+  setProcessing(processing: boolean): void {
+    if (!this.sendBtn) return;
+    this.sendBtn.disabled = processing;
+    this.sendBtn.toggleClass("processing", processing);
+  }
+
+  focus(): void {
+    this.inputEl?.focus();
+  }
+
+  getValue(): string {
+    return this.inputEl?.value.trim() ?? "";
+  }
+
+  clearValue(): void {
+    if (!this.inputEl) return;
+    this.inputEl.value = "";
+    this.autoResize();
   }
 
   private render(): void {
     if (!this.containerEl) return;
-
     this.containerEl.empty();
 
-    // 输入区域
     const inputWrapper = this.containerEl.createDiv({ cls: "agent-input-wrapper" });
 
     this.inputEl = inputWrapper.createEl("textarea", {
@@ -112,20 +78,23 @@ export class EditorInputBar {
       },
     });
 
-    // 自动调整高度
-    this.inputEl.addEventListener("input", () => {
-      this.autoResize();
+    this.inputEl.addEventListener("input", () => this.autoResize());
+
+    // IME 组合状态跟踪，防止中文输入法 Enter 误触发发送
+    this.inputEl.addEventListener("compositionstart", () => {
+      this.isComposing = true;
+    });
+    this.inputEl.addEventListener("compositionend", () => {
+      this.isComposing = false;
     });
 
-    // 快捷键
     this.inputEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !this.isComposing) {
         e.preventDefault();
-        this.handleSend();
+        this.triggerSend();
       }
     });
 
-    // 按钮区域
     const btnWrapper = inputWrapper.createDiv({ cls: "agent-btn-wrapper" });
 
     this.sendBtn = btnWrapper.createEl("button", {
@@ -137,182 +106,27 @@ export class EditorInputBar {
       },
     });
     setIcon(this.sendBtn, "send");
-    this.sendBtn.addEventListener("click", () => this.handleSend());
-    
-    // 键盘无障碍：Enter 和 Space 键触发发送
+
+    this.sendBtn.addEventListener("click", () => this.triggerSend());
     this.sendBtn.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        this.handleSend();
+        this.triggerSend();
       }
     });
 
-    // 状态栏
     this.statusEl = this.containerEl.createDiv({ cls: "agent-editor-status" });
     this.setStatus("就绪");
+  }
+
+  private triggerSend(): void {
+    const text = this.getValue();
+    if (text) this.onSend?.(text);
   }
 
   private autoResize(): void {
     if (!this.inputEl) return;
     this.inputEl.style.height = "auto";
     this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 150) + "px";
-  }
-
-  private setStatus(text: string, type?: "processing" | "error"): void {
-    if (!this.statusEl) return;
-    this.statusEl.textContent = text;
-    this.statusEl.className = "agent-editor-status";
-    if (type) {
-      this.statusEl.addClass(type);
-    }
-  }
-
-  private updateSendButton(isProcessing: boolean): void {
-    if (!this.sendBtn) return;
-    this.sendBtn.disabled = isProcessing;
-    this.sendBtn.toggleClass("processing", isProcessing);
-  }
-
-  private async handleSend(): Promise<void> {
-    if (!this.inputEl || !this.attachedView) return;
-
-    const text = this.inputEl.value.trim();
-    if (!text || this.client.processing) return;
-
-    if (!this.settings.sessionKey) {
-      new Notice("请先在设置中配置 Session Key");
-      return;
-    }
-
-    const editor = this.attachedView.editor;
-    const file = this.attachedView.file;
-    if (!editor || !file) return;
-
-    // 清空输入框
-    this.inputEl.value = "";
-    this.autoResize();
-
-    // 在编辑器末尾插入用户消息块（HR 格式）
-    const userBlock = this.formatUserBlock(text);
-    const content = editor.getValue();
-    const prefix = content.length > 0 && !content.endsWith("\n\n") ? "\n\n" : "";
-    editor.replaceRange(prefix + userBlock + "\n\n", { line: editor.lineCount(), ch: 0 });
-
-    // 发送到 agent
-    this.setStatus("处理中...", "processing");
-    this.updateSendButton(true);
-
-    try {
-      await this.client.sendMessage(text);
-    } catch (error) {
-      this.setStatus(`发送失败: ${error instanceof Error ? error.message : String(error)}`, "error");
-      this.updateSendButton(false);
-    }
-  }
-
-  private formatUserBlock(text: string): string {
-    const message: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      role: "user",
-      content: text,
-      timestamp: Date.now(),
-    };
-    return formatMessageBlock(message);
-  }
-
-  private insertStreamingCallout(): void {
-    if (!this.attachedView) return;
-    const editor = this.attachedView.editor;
-
-    // 插入 agent header（只包含角色行和空行，body 留空）
-    // header 格式：**Agent** · HH:mm\n\n（共 2 行）
-    const header = formatStreamStart("assistant");
-    const pos = { line: editor.lineCount(), ch: 0 };
-    editor.replaceRange(header, pos);
-    
-    // 记录 body 开始的行号（header 后最后一个空行之后）
-    // header 插入后，lineCount() 增加了 2 行
-    // body 应该从最后一个空行之后开始，也就是 lineCount() - 1
-    this.streamingBodyLine = editor.lineCount() - 1;
-  }
-
-  private updateStreamingCallout(text: string): void {
-    if (!this.attachedView || this.streamingBodyLine < 0) return;
-
-    // 记录最新文本，如果已有帧在等待，直接覆盖即可（节流）
-    this.pendingText = text;
-    if (this.rafId !== null) return; // 本帧已调度，无需重复
-
-    this.rafId = window.requestAnimationFrame(() => {
-      this.rafId = null;
-      const latestText = this.pendingText;
-      this.pendingText = null;
-      if (latestText === null || !this.attachedView || this.streamingBodyLine < 0) return;
-      this.writeBodyText(latestText + "▋");
-    });
-  }
-
-  private finalizeStreamingCallout(text: string, _hadStreamChunks: boolean): void {
-    // 取消节流渲染
-    if (this.rafId !== null) {
-      window.cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
-    this.pendingText = null;
-
-    if (!this.attachedView || this.streamingBodyLine < 0) return;
-
-    // 如实写入最终内容（移除光标符）
-    this.writeBodyText(text);
-    this.streamingBodyLine = -1;
-    this.setStatus("完成");
-    this.updateSendButton(false);
-  }
-
-  /** 将文本写入 streaming body 区域（从 streamingBodyLine 到末尾） */
-  private writeBodyText(text: string): void {
-    if (!this.attachedView || this.streamingBodyLine < 0) return;
-    const editor = this.attachedView.editor;
-    const currentLineCount = editor.lineCount();
-    const startPos = { line: this.streamingBodyLine, ch: 0 };
-    const endPos = { line: currentLineCount - 1, ch: editor.getLine(currentLineCount - 1).length };
-    editor.replaceRange(text, startPos, endPos);
-  }
-
-  /**
-   * 处理 tool use 事件，追加到编辑器
-   */
-  private handleToolUse(event: SessionExecutionEvent): void {
-    if (!this.attachedView) return;
-    const editor = this.attachedView.editor;
-
-    const toolUseLine = formatToolUse(event);
-    if (!toolUseLine) return;
-
-    // 在文件末尾追加 tool use 行
-    const content = editor.getValue();
-    const prefix = content.length > 0 && !content.endsWith("\n") ? "\n" : "";
-    editor.replaceRange(prefix + toolUseLine + "\n", { line: editor.lineCount(), ch: 0 });
-  }
-
-  /**
-   * 获取当前附加到的视图
-   */
-  getAttachedView(): MarkdownView | null {
-    return this.attachedView;
-  }
-
-  /**
-   * 输入栏是否已附加到某个视图
-   */
-  isAttached(): boolean {
-    return this.containerEl !== null && this.attachedView !== null;
-  }
-
-  /**
-   * 聚焦到输入框
-   */
-  focus(): void {
-    this.inputEl?.focus();
   }
 }

@@ -1,18 +1,17 @@
 import { Plugin, PluginSettingTab, App, Setting, Notice, MarkdownView, WorkspaceLeaf } from "obsidian";
 import type { PluginSettings } from "./types";
 import { DEFAULT_PLUGIN_SETTINGS } from "./types";
-import { EditorInputBar } from "./ui/EditorInputBar";
+import { ChatController } from "./ui/ChatController";
 import { ChatUpdater } from "./markdown";
 
 export default class AgentChatPlugin extends Plugin {
   settings: PluginSettings;
-  inputBar: EditorInputBar;
+  controller: ChatController;
 
   async onload(): Promise<void> {
     await this.loadSettings();
 
-    // 创建编辑器输入栏实例
-    this.inputBar = new EditorInputBar(this.app, this.settings);
+    this.controller = new ChatController(this.app, this.settings);
 
     // 监听活动 leaf 变化，自动附加输入栏到 Markdown 视图
     this.registerEvent(
@@ -34,8 +33,8 @@ export default class AgentChatPlugin extends Plugin {
       id: "focus-agent-input",
       name: "Focus agent input",
       callback: () => {
-        if (this.inputBar.isAttached()) {
-          this.inputBar.focus();
+        if (this.controller.isAttached()) {
+          this.controller.focus();
         } else {
           new Notice("请先打开一个 Markdown 文件");
         }
@@ -54,7 +53,7 @@ export default class AgentChatPlugin extends Plugin {
   }
 
   onunload(): void {
-    this.inputBar.detach();
+    this.controller.detach();
   }
 
   async loadSettings(): Promise<void> {
@@ -63,7 +62,7 @@ export default class AgentChatPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
-    this.inputBar.updateSettings(this.settings);
+    this.controller.updateSettings(this.settings);
   }
 
   /**
@@ -78,11 +77,9 @@ export default class AgentChatPlugin extends Plugin {
 
     const view = leaf.view;
     if (view instanceof MarkdownView) {
-      // 只要是 Markdown 视图就附加（包括默认的编辑+预览分屏模式）
-      this.inputBar.attachToMarkdownView(view);
+      this.controller.attachToMarkdownView(view);
     } else {
-      // 离开 Markdown 视图时分离
-      this.inputBar.detach();
+      this.controller.detach();
     }
   }
 
@@ -94,14 +91,12 @@ export default class AgentChatPlugin extends Plugin {
     const title = `Chat ${new Date().toISOString().slice(0, 10)}`;
     const file = await updater.createChatNote(this.settings.defaultNoteFolder, title);
 
-    // 在新标签页打开
     const leaf = this.app.workspace.getLeaf(true);
     await leaf.openFile(file);
 
-    // 附加输入栏到 Markdown 视图
     if (leaf.view instanceof MarkdownView) {
-      this.inputBar.attachToMarkdownView(leaf.view);
-      this.inputBar.focus();
+      this.controller.attachToMarkdownView(leaf.view);
+      this.controller.focus();
     }
 
     new Notice("已创建新对话笔记");

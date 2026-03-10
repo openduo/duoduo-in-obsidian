@@ -130,18 +130,9 @@ export class AgentClient {
     }
   }
 
-  private pullCount = 0;
-
   private startPullLoop(): void {
-    this.pullCount = 0;
-    const t0 = performance.now();
-    console.log("[AgentClient] ⏱ pull loop started");
-
     const pull = async (): Promise<void> => {
       if (!this.isProcessing) return;
-
-      const pullIdx = ++this.pullCount;
-      const tPull = performance.now();
 
       try {
         const params: ChannelPullParams = {
@@ -153,30 +144,8 @@ export class AgentClient {
           channel_capabilities: CAPABILITIES,
         };
 
-        const result: PullResult = await this.callRpc<PullResult>("channel.pull", params);
-        const tGot = performance.now();
+        const result = await this.callRpc<PullResult>("channel.pull", params);
         const records = result.records ?? [];
-
-        console.log(
-          `[AgentClient] pull#${pullIdx} +${(tGot - t0).toFixed(0)}ms` +
-          ` (rtt=${( tGot - tPull).toFixed(0)}ms)` +
-          ` records=${records.length}` +
-          ` idle=${result.idle ?? false}`
-        );
-
-        if (records.length > 0) {
-          records.forEach((r, i) => {
-            const hasText = r.payload?.text !== undefined;
-            const streamInfo = r.stream
-              ? `stream={is_final:${r.stream.is_final}, seq:${(r.stream as Record<string,unknown>).seq ?? "?"}}`
-              : "stream=null";
-            const textLen = hasText ? `text.len=${(r.payload.text ?? "").length}` : "no-text";
-            const dataType = r.payload?.data
-              ? `data.type=${(r.payload.data as Record<string,unknown>).type}`
-              : "";
-            console.log(`  record[${i}]: ${streamInfo} ${textLen} ${dataType}`);
-          });
-        }
 
         if (records.length > 0) {
           for (const record of records) {
@@ -198,7 +167,6 @@ export class AgentClient {
               if (isStreamChunk) {
                 if (!this.streamStarted) {
                   this.streamStarted = true;
-                  console.log(`[AgentClient] onStreamStart at +${(performance.now()-t0).toFixed(0)}ms`);
                   this.handler.onStreamStart?.();
                 }
                 this.hadStreamChunks = true;
@@ -211,10 +179,6 @@ export class AgentClient {
                 }
                 const finalText = this.accumulatedText + (record.payload.text || "");
                 const hadChunks = this.hadStreamChunks;
-                console.log(
-                  `[AgentClient] onStreamEnd (isFinalChunk) at +${(performance.now()-t0).toFixed(0)}ms` +
-                  ` hadStreamChunks=${hadChunks} totalLen=${finalText.length}`
-                );
                 this.isProcessing = false;
                 this.streamStarted = false;
                 this.hadStreamChunks = false;
@@ -226,10 +190,6 @@ export class AgentClient {
                   this.handler.onStreamStart?.();
                 }
                 const text = record.payload.text || "";
-                console.log(
-                  `[AgentClient] onStreamEnd (isNonStreaming) at +${(performance.now()-t0).toFixed(0)}ms` +
-                  ` totalLen=${text.length}`
-                );
                 this.isProcessing = false;
                 this.streamStarted = false;
                 this.hadStreamChunks = false;
