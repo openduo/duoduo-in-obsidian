@@ -1,0 +1,25 @@
+{
+  "name": "duoduo-in-obsidian",
+  "version": "0.1.0",
+  "description": "Native agent chat interface for Obsidian, powered by duoduo daemon.",
+  "main": "main.js",
+  "scripts": {
+    "build": "bun run esbuild.config.mjs",
+    "dev": "bun run esbuild.config.mjs --watch"
+  },
+  "keywords": ["obsidian", "agent", "chat", "duoduo"],
+  "author": "kuaner",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kuaner/duoduo-in-obsidian.git"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.20.0",
+    "obsidian": "latest",
+    "tslib": "^2.8.1",
+    "typescript": "^5.0.0"
+  }
+}

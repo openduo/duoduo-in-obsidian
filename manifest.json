@@ -1,0 +1,10 @@
+{
+	"id": "obsidian-agent-chat",
+	"name": "Agent Chat",
+	"version": "0.1.0",
+	"minAppVersion": "1.0.0",
+	"description": "ChatGPT-style interface for local agents with Markdown persistence",
+	"author": "kuaner",
+	"authorUrl": "https://github.com/kuaner",
+	"isDesktopOnly": false
+}

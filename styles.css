@@ -1,0 +1,137 @@
+/* Agent Editor Input Bar - 常驻输入栏样式 */
+
+.agent-editor-input-bar {
+  display: flex;
+  flex-direction: column;
+  padding: var(--size-4-2) var(--size-4-3);
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+
+.agent-input-wrapper {
+  display: flex;
+  gap: var(--size-4-2);
+  align-items: flex-end;
+}
+
+.agent-editor-input {
+  flex: 1;
+  min-height: 36px;
+  max-height: 150px;
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-family: var(--font-text);
+  font-size: var(--font-text-size);
+  resize: none;
+  line-height: 1.4;
+}
+
+.agent-editor-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  background: var(--background-primary);
+}
+
+.agent-editor-input:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.agent-editor-input::placeholder {
+  color: var(--text-faint);
+}
+
+.agent-btn-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+}
+
+.agent-send-btn {
+  width: 44px;
+  height: 44px;
+  padding: var(--size-4-2);
+  border: none;
+  border-radius: var(--radius-m);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.agent-send-btn:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.agent-send-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.agent-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-send-btn.processing {
+  background: var(--text-warning);
+}
+
+.agent-editor-status {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding: var(--size-4-1) 0 0 0;
+  min-height: 1.2em;
+}
+
+.agent-editor-status.processing {
+  color: var(--text-warning);
+}
+
+.agent-editor-status.error {
+  color: var(--text-error);
+}
+
+/* 设置页面连接状态样式 */
+.agent-connection-status {
+  padding: var(--size-4-2) var(--size-4-3);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  font-size: var(--font-ui-small);
+}
+
+.agent-connection-status.connected {
+  color: var(--text-success);
+}
+
+.agent-connection-status.warning {
+  color: var(--text-warning);
+}
+
+.agent-connection-status.error {
+  color: var(--text-error);
+}
+
+/* Agent Chat 消息格式样式（HR 分隔格式） */
+.markdown-source-view.mod-cm6 .cm-content hr {
+  margin: var(--size-4-4) 0;
+  border-color: var(--background-modifier-border);
+}
+
+.markdown-source-view.mod-cm6 .cm-content hr + p strong,
+.markdown-preview-view hr + p strong {
+  color: var(--text-normal);
+  font-weight: var(--font-bold);
+}
+
+/* 预览模式下的消息分隔样式 */
+.markdown-preview-view hr {
+  margin: var(--size-4-4) 0;
+  border-color: var(--background-modifier-border);
+}
