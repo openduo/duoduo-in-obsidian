@@ -1,2 +1,2 @@
-export { parseChatFromMarkdown, formatMessageBlock, formatStreamStart } from "./ChatParser";
+export { parseChatFromMarkdown, formatMessageBlock, formatStreamStart, formatToolUse } from "./ChatParser";
 export { ChatUpdater } from "./ChatUpdater";

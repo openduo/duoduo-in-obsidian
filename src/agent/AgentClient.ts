@@ -6,10 +6,21 @@ import type {
   ChannelPullParams,
   ChannelAckParams,
   ChannelCapabilities,
-  PullResult,
   OutboxRecord,
-  AgentSettings,
-} from "../types";
+  SessionExecutionEvent,
+} from "@openduo/protocol";
+import type { AgentSettings } from "../types";
+
+// PullResult 类型定义（协议包未直接导出）
+interface PullResult {
+  records?: OutboxRecord[];
+  next_cursor?: string;
+  idle?: boolean;
+}
+
+/** 让出 JS 执行权，允许浏览器完成一次重绘（DOM 更新可见） */
+const yieldFrame = (): Promise<void> =>
+  new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 
 const CAPABILITIES: ChannelCapabilities = {
   outbound: {
@@ -21,6 +32,7 @@ export type AgentEventHandler = {
   onMessage?: (record: OutboxRecord, accumulated: string) => void;
   onStreamStart?: () => void;
   onStreamEnd?: (finalText: string) => void;
+  onToolUse?: (event: SessionExecutionEvent) => void;
   onError?: (error: Error) => void;
 };
 
@@ -120,7 +132,7 @@ export class AgentClient {
           session_key: this.settings.sessionKey,
           consumer_id: this.settings.consumerId,
           cursor: this.cursor,
-          return_mask: ["final", "stream"],
+          return_mask: ["final", "stream", "tool"],
           wait_ms: this.settings.pullWaitMs,
           channel_capabilities: CAPABILITIES,
         };
@@ -129,16 +141,30 @@ export class AgentClient {
 
         if (result.records && result.records.length > 0) {
           for (const record of result.records) {
-            if (record.payload?.text) {
+            // 处理 tool use 事件（从 payload.data 中提取）
+            if (record.payload?.data && typeof record.payload.data === "object") {
+              const data = record.payload.data as Record<string, unknown>;
+              if (data.type && (data.type === "tool_use" || data.type === "thought_chunk" || data.type === "tool_result")) {
+                this.handler.onToolUse?.(data as SessionExecutionEvent);
+                // 每个 tool 事件后 yield 一帧，让 UI 有机会更新
+                await yieldFrame();
+                continue;
+              }
+            }
+
+            // 处理文本消息
+            if (record.payload?.text !== undefined) {
               const isStream = record.stream && !record.stream.is_final;
 
               if (isStream) {
+                // Streaming chunk: 追加到累积文本，然后 yield 让浏览器重绘
                 this.accumulatedText += record.payload.text;
                 this.handler.onMessage?.(record, this.accumulatedText);
+                // 关键：每个 chunk 处理后让出执行权，浏览器才能看到逐字出现效果
+                await yieldFrame();
               } else {
-                // Final message
-                const finalText = this.accumulatedText + record.payload.text;
-                this.handler.onMessage?.(record, finalText);
+                // Final message: payload.text 是最后一个 delta，追加后完成
+                const finalText = this.accumulatedText + (record.payload.text || "");
                 this.handler.onStreamEnd?.(finalText);
                 this.isProcessing = false;
                 this.accumulatedText = "";

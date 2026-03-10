@@ -1,7 +1,8 @@
 import { App, Editor, MarkdownView, Notice, setIcon } from "obsidian";
-import type { PluginSettings, OutboxRecord } from "../types";
+import type { PluginSettings } from "../types";
+import type { OutboxRecord, SessionExecutionEvent } from "@openduo/protocol";
 import { AgentClient } from "../agent";
-import { ChatUpdater, formatStreamStart, formatMessageBlock } from "../markdown";
+import { ChatUpdater, formatStreamStart, formatMessageBlock, formatToolUse } from "../markdown";
 import type { ChatMessage } from "../types";
 
 /**
@@ -35,6 +36,9 @@ export class EditorInputBar {
       },
       onStreamEnd: (finalText: string) => {
         this.finalizeStreamingCallout(finalText);
+      },
+      onToolUse: (event: SessionExecutionEvent) => {
+        this.handleToolUse(event);
       },
       onError: (error: Error) => {
         this.setStatus(`错误: ${error.message}`, "error");
@@ -212,14 +216,14 @@ export class EditorInputBar {
     if (!this.attachedView) return;
     const editor = this.attachedView.editor;
 
-    // 插入 HR header（只包含分隔线和角色行，body 留空）
-    // header 格式：---\n**Agent** · HH:mm\n\n（共 4 行，最后两行是空行）
+    // 插入 agent header（只包含角色行和空行，body 留空）
+    // header 格式：**Agent** · HH:mm\n\n（共 2 行）
     const header = formatStreamStart("assistant");
     const pos = { line: editor.lineCount(), ch: 0 };
     editor.replaceRange(header, pos);
     
     // 记录 body 开始的行号（header 后最后一个空行之后）
-    // header 插入后，lineCount() 增加了 4 行
+    // header 插入后，lineCount() 增加了 2 行
     // body 应该从最后一个空行之后开始，也就是 lineCount() - 1
     this.streamingBodyLine = editor.lineCount() - 1;
   }
@@ -257,6 +261,22 @@ export class EditorInputBar {
     this.streamingBodyLine = -1;
     this.setStatus("完成");
     this.updateSendButton(false);
+  }
+
+  /**
+   * 处理 tool use 事件，追加到编辑器
+   */
+  private handleToolUse(event: SessionExecutionEvent): void {
+    if (!this.attachedView) return;
+    const editor = this.attachedView.editor;
+
+    const toolUseLine = formatToolUse(event);
+    if (!toolUseLine) return;
+
+    // 在文件末尾追加 tool use 行
+    const content = editor.getValue();
+    const prefix = content.length > 0 && !content.endsWith("\n") ? "\n" : "";
+    editor.replaceRange(prefix + toolUseLine + "\n", { line: editor.lineCount(), ch: 0 });
   }
 
   /**

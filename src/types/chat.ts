@@ -34,8 +34,8 @@ export const DEFAULT_SETTINGS: AgentSettings = {
   sourceKind: "obsidian",
   channelId: "obsidian-local",
   consumerId: "obsidian-consumer",
-  pullInterval: 500,
-  pullWaitMs: 5000,
+  pullInterval: 100,  // chunk 之间的调度间隔（ms）
+  pullWaitMs: 1000,   // 长轮询等待时间（ms），越小返回越及时
 };
 
 export interface PluginSettings extends AgentSettings {

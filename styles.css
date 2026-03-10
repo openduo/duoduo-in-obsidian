@@ -118,20 +118,35 @@
   color: var(--text-error);
 }
 
-/* Agent Chat 消息格式样式（HR 分隔格式） */
-.markdown-source-view.mod-cm6 .cm-content hr {
-  margin: var(--size-4-4) 0;
-  border-color: var(--background-modifier-border);
+/* Agent Chat 消息格式样式 */
+
+/* 用户消息：blockquote 中的角色标签使用蓝色 */
+.markdown-source-view.mod-cm6 .cm-content blockquote p:first-child strong,
+.markdown-preview-view blockquote p:first-child strong {
+  color: var(--color-blue);
+  font-weight: var(--font-bold);
 }
 
-.markdown-source-view.mod-cm6 .cm-content hr + p strong,
-.markdown-preview-view hr + p strong {
+/* Agent 消息：角色标签样式 */
+.markdown-source-view.mod-cm6 .cm-content p:has(strong:contains("Agent")),
+.markdown-preview-view p:has(strong:contains("Agent")) {
+  margin-top: var(--size-4-3);
+  margin-bottom: var(--size-4-1);
+}
+
+.markdown-preview-view p:has(strong:contains("Agent")) strong {
   color: var(--text-normal);
   font-weight: var(--font-bold);
 }
 
-/* 预览模式下的消息分隔样式 */
-.markdown-preview-view hr {
-  margin: var(--size-4-4) 0;
-  border-color: var(--background-modifier-border);
+/* 减小消息之间的间距 */
+.markdown-preview-view blockquote + p:has(strong:contains("Agent")),
+.markdown-preview-view p:has(strong:contains("Agent")) + blockquote {
+  margin-top: var(--size-4-2);
+}
+
+/* Tool use 事件样式（blockquote 中的斜体） */
+.markdown-preview-view blockquote p em {
+  color: var(--text-muted);
+  font-style: italic;
 }
