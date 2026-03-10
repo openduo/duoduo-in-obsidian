@@ -3,15 +3,19 @@ import type { PluginSettings } from "./types";
 import { DEFAULT_PLUGIN_SETTINGS } from "./types";
 import { ChatController } from "./ui/ChatController";
 import { ChatUpdater } from "./markdown";
+import type { Locale } from "./i18n";
+import { detectLocale, t } from "./i18n";
 
 export default class AgentChatPlugin extends Plugin {
   settings: PluginSettings;
   controller: ChatController;
+  locale: Locale;
 
   async onload(): Promise<void> {
     await this.loadSettings();
 
-    this.controller = new ChatController(this.settings);
+    this.locale = detectLocale(this.app);
+    this.controller = new ChatController(this.settings, this.locale);
 
     // 监听活动 leaf 变化，自动附加输入栏到 Markdown 视图
     this.registerEvent(
@@ -31,7 +35,7 @@ export default class AgentChatPlugin extends Plugin {
     // 命令：聚焦到输入栏（无默认快捷键，用户可在设置中自定义）
     this.addCommand({
       id: "focus-agent-input",
-      name: "Focus agent input",
+      name: t(this.locale, "cmd.focus"),
       callback: () => {
         if (this.controller.isAttached()) {
           this.controller.focus();
@@ -44,7 +48,7 @@ export default class AgentChatPlugin extends Plugin {
     // 命令：创建新的对话笔记
     this.addCommand({
       id: "create-chat-note",
-      name: "Create new chat note",
+      name: t(this.locale, "cmd.create-note"),
       callback: () => this.createNewChatNote(),
     });
 
@@ -115,10 +119,12 @@ class AgentChatSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    new Setting(containerEl).setHeading().setName("Agent Chat 设置");
+    const locale = detectLocale(this.app);
+
+    new Setting(containerEl).setHeading().setName(t(locale, "settings.section.main"));
 
     new Setting(containerEl)
-      .setName("Daemon URL")
+      .setName(t(locale, "settings.daemon-url"))
       .setDesc("duoduo daemon 的地址")
       .addText((text) =>
         text
@@ -131,7 +137,7 @@ class AgentChatSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Source Kind")
+      .setName(t(locale, "settings.source-kind"))
       .setDesc("来源类型标识符")
       .addText((text) =>
         text
@@ -143,7 +149,7 @@ class AgentChatSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("默认笔记文件夹")
+      .setName(t(locale, "settings.default-folder"))
       .setDesc("对话笔记保存位置")
       .addText((text) =>
         text
@@ -154,10 +160,10 @@ class AgentChatSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl).setHeading().setName("高级设置");
+    new Setting(containerEl).setHeading().setName(t(locale, "settings.section.advanced"));
 
     new Setting(containerEl)
-      .setName("Pull 间隔 (ms)")
+      .setName(t(locale, "settings.pull-interval"))
       .setDesc("流式输出时两次拉取请求之间的间隔")
       .addText((text) =>
         text
@@ -172,7 +178,7 @@ class AgentChatSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Pull 等待 (ms)")
+      .setName(t(locale, "settings.pull-wait"))
       .setDesc("daemon 长轮询等待时间")
       .addText((text) =>
         text
@@ -187,13 +193,14 @@ class AgentChatSettingTab extends PluginSettingTab {
       );
 
     // 显示连接状态
-    new Setting(containerEl).setHeading().setName("连接状态");
+    new Setting(containerEl).setHeading().setName(t(locale, "settings.connection.section"));
     const statusEl = containerEl.createDiv({ cls: "agent-connection-status" });
     this.checkConnection(statusEl);
   }
 
   private async checkConnection(container: HTMLElement): Promise<void> {
-    container.setText("检查中...");
+    const locale = detectLocale(this.app);
+    container.setText(t(locale, "status.connection.checking"));
     try {
       const response = await requestUrl({
         url: `${this.plugin.settings.daemonUrl}/healthz`,
@@ -201,14 +208,14 @@ class AgentChatSettingTab extends PluginSettingTab {
         throw: false,
       });
       if (response.status === 200) {
-        container.setText("✅ 已连接到 daemon");
+        container.setText("✅ " + t(locale, "status.connection.connected"));
         container.className = "agent-connection-status connected";
       } else {
         container.setText(`⚠️ Daemon 返回状态 ${response.status}`);
         container.className = "agent-connection-status warning";
       }
     } catch {
-      container.setText(`❌ 无法连接到 daemon (${this.plugin.settings.daemonUrl})`);
+      container.setText(`❌ ${t(locale, "status.connection.disconnected")} (${this.plugin.settings.daemonUrl})`);
       container.className = "agent-connection-status error";
     }
   }

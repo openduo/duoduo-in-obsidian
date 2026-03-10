@@ -6,6 +6,8 @@ import { AgentClient } from "../agent";
 import { formatMessageBlock, formatToolUse } from "../markdown";
 import { EditorInputBar } from "./EditorInputBar";
 import { EditorAdapter } from "./EditorAdapter";
+import type { Locale } from "../i18n";
+import { t } from "../i18n";
 
 // 基于 notePath 的 MD5 生成符合 [A-Za-z0-9_-]{1,128} 的 channel_id
 function makeChannelId(notePath: string): string {
@@ -24,9 +26,11 @@ export class ChatController {
   private adapter: EditorAdapter | null = null;
   private client: AgentClient;
   private settings: PluginSettings;
+  private locale: Locale;
 
-  constructor(settings: PluginSettings) {
+  constructor(settings: PluginSettings, locale: Locale) {
     this.settings = settings;
+    this.locale = locale;
     this.client = new AgentClient(settings);
 
     this.client.setHandler({
@@ -47,7 +51,7 @@ export class ChatController {
         if (line) this.adapter?.appendLine(line);
       },
       onError: (error: Error) => {
-        this.inputBar?.setStatus(`错误: ${error.message}`, "error");
+        this.inputBar?.setStatus(`${t(this.locale, "status.error.prefix")}${error.message}`, "error");
         this.inputBar?.setProcessing(false);
         this.inputBar?.setConnectionStatus("disconnected");
       },
@@ -79,9 +83,10 @@ export class ChatController {
 
     this.adapter = new EditorAdapter(view);
 
-    this.inputBar = new EditorInputBar();
+    this.inputBar = new EditorInputBar(this.locale);
     this.inputBar.onSend = (text) => this.handleSend(text);
     this.inputBar.mount(view);
+    this.inputBar.setStatus(t(this.locale, "status.ready"));
 
     // 异步检测 daemon 连接状态，完成前显示 checking
     this.client.checkHealth().then((ok) => {
@@ -128,7 +133,7 @@ export class ChatController {
     };
     this.adapter.appendUserBlock(formatMessageBlock(message));
 
-    this.inputBar.setStatus("处理中...", "processing");
+    this.inputBar.setStatus(t(this.locale, "status.processing"), "processing");
     this.inputBar.setProcessing(true);
     this.inputBar.setConnectionStatus("checking");
 

@@ -1,5 +1,7 @@
 import { setIcon } from "obsidian";
 import type { MarkdownView } from "obsidian";
+import type { Locale } from "../i18n";
+import { t } from "../i18n";
 
 export type StatusType = "processing" | "error";
 export type ConnectionStatus = "connected" | "disconnected" | "checking";
@@ -15,6 +17,11 @@ export class EditorInputBar {
   private statusTextEl: HTMLElement | null = null;
   private sendBtn: HTMLButtonElement | null = null;
   private isComposing = false;
+  private locale: Locale;
+
+  constructor(locale: Locale) {
+    this.locale = locale;
+  }
 
   /** 用户触发发送时调用，参数为输入框内容 */
   onSend: ((text: string) => void) | null = null;
@@ -41,11 +48,10 @@ export class EditorInputBar {
   setConnectionStatus(status: ConnectionStatus): void {
     if (!this.statusDotEl) return;
     this.statusDotEl.className = `agent-status-dot ${status}`;
-    this.statusDotEl.ariaLabel = status === "connected"
-      ? "Daemon 已连接"
-      : status === "disconnected"
-      ? "Daemon 未连接"
-      : "连接检测中...";
+    if (!this.statusDotEl.ariaLabel) {
+      // 初次设置 ariaLabel，由控制层负责具体文字
+      this.statusDotEl.ariaLabel = t(this.locale, "status.connection.checking");
+    }
   }
 
   /**
@@ -90,7 +96,7 @@ export class EditorInputBar {
     this.inputEl = inputWrapper.createEl("textarea", {
       cls: "agent-editor-input",
       attr: {
-        placeholder: "与 Agent 对话... (Enter 发送, Shift+Enter 换行)",
+        placeholder: t(this.locale, "input.placeholder"),
         rows: "1",
       },
     });
@@ -118,7 +124,7 @@ export class EditorInputBar {
       cls: "agent-send-btn",
       attr: {
         type: "button",
-        "aria-label": "发送消息",
+        "aria-label": t(this.locale, "button.send.aria"),
         "data-tooltip-position": "top",
       },
     });
