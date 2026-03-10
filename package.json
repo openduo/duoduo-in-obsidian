@@ -1,6 +1,6 @@
 {
   "name": "duoduo-in-obsidian",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Native agent chat interface for Obsidian, powered by duoduo daemon.",
   "main": "main.js",
   "scripts": {
