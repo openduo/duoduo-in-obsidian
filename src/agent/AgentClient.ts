@@ -18,10 +18,6 @@ interface PullResult {
   idle?: boolean;
 }
 
-/** 让出 JS 执行权，允许浏览器完成一次重绘（DOM 更新可见） */
-const yieldFrame = (): Promise<void> =>
-  new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
-
 const CAPABILITIES: ChannelCapabilities = {
   outbound: {
     accept_mime: ["text/plain", "text/markdown", "image/*"],
@@ -146,8 +142,6 @@ export class AgentClient {
               const data = record.payload.data as Record<string, unknown>;
               if (data.type && (data.type === "tool_use" || data.type === "thought_chunk" || data.type === "tool_result")) {
                 this.handler.onToolUse?.(data as SessionExecutionEvent);
-                // 每个 tool 事件后 yield 一帧，让 UI 有机会更新
-                await yieldFrame();
                 continue;
               }
             }
@@ -157,13 +151,11 @@ export class AgentClient {
               const isStream = record.stream && !record.stream.is_final;
 
               if (isStream) {
-                // Streaming chunk: 追加到累积文本，然后 yield 让浏览器重绘
+                // 立刻积累文本，渲染节流由 onMessage 接收方负责
                 this.accumulatedText += record.payload.text;
                 this.handler.onMessage?.(record, this.accumulatedText);
-                // 关键：每个 chunk 处理后让出执行权，浏览器才能看到逐字出现效果
-                await yieldFrame();
               } else {
-                // Final message: payload.text 是最后一个 delta，追加后完成
+                // Final: payload.text 是最后一个 delta
                 const finalText = this.accumulatedText + (record.payload.text || "");
                 this.handler.onStreamEnd?.(finalText);
                 this.isProcessing = false;

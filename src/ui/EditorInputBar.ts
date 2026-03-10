@@ -18,8 +18,11 @@ export class EditorInputBar {
   private updater: ChatUpdater;
   private settings: PluginSettings;
   private app: App;
-  private streamingBodyLine: number = -1; // 流式消息 body 开始的行号（append-only 起始位置）
+  private streamingBodyLine: number = -1;
   private attachedView: MarkdownView | null = null;
+  // 节流渲染：pendingText 存最新累积文本，rafId 防止重复调度
+  private pendingText: string | null = null;
+  private rafId: number | null = null;
 
   constructor(app: App, settings: PluginSettings) {
     this.app = app;
@@ -84,7 +87,12 @@ export class EditorInputBar {
       this.containerEl = null;
     }
     this.attachedView = null;
-    this.streamingBodyLine = -1; // 重置 streaming 状态
+    this.streamingBodyLine = -1;
+    this.pendingText = null;
+    if (this.rafId !== null) {
+      window.cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
     this.client.stop();
   }
 
@@ -230,34 +238,41 @@ export class EditorInputBar {
 
   private updateStreamingCallout(text: string): void {
     if (!this.attachedView || this.streamingBodyLine < 0) return;
-    const editor = this.attachedView.editor;
 
-    // Append-only 更新：直接替换从 streamingBodyLine 到文件末尾的内容
-    const currentLineCount = editor.lineCount();
-    
-    // 构建新的 body 内容（追加光标符表示正在输入）
-    const newBody = text + "▋";
-    
-    // 确定替换范围：从 streamingBodyLine 到文件末尾
-    const startPos = { line: this.streamingBodyLine, ch: 0 };
-    const endPos = { line: currentLineCount - 1, ch: editor.getLine(currentLineCount - 1).length };
-    
-    editor.replaceRange(newBody, startPos, endPos);
+    // 记录最新文本，如果已有帧在等待，直接覆盖即可（节流）
+    this.pendingText = text;
+    if (this.rafId !== null) return; // 本帧已调度，无需重复
+
+    this.rafId = window.requestAnimationFrame(() => {
+      this.rafId = null;
+      const latestText = this.pendingText;
+      this.pendingText = null;
+      if (latestText === null || !this.attachedView || this.streamingBodyLine < 0) return;
+
+      const editor = this.attachedView.editor;
+      const currentLineCount = editor.lineCount();
+      const startPos = { line: this.streamingBodyLine, ch: 0 };
+      const endPos = { line: currentLineCount - 1, ch: editor.getLine(currentLineCount - 1).length };
+      editor.replaceRange(latestText + "▋", startPos, endPos);
+    });
   }
 
   private finalizeStreamingCallout(text: string): void {
+    // 取消任何未完成的节流渲染，直接写最终内容
+    if (this.rafId !== null) {
+      window.cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    this.pendingText = null;
+
     if (!this.attachedView || this.streamingBodyLine < 0) return;
     const editor = this.attachedView.editor;
 
-    // 移除光标符，写入最终内容
     const currentLineCount = editor.lineCount();
     const startPos = { line: this.streamingBodyLine, ch: 0 };
     const endPos = { line: currentLineCount - 1, ch: editor.getLine(currentLineCount - 1).length };
-    
-    // 替换为最终内容（移除光标符）
     editor.replaceRange(text, startPos, endPos);
-    
-    // 重置状态
+
     this.streamingBodyLine = -1;
     this.setStatus("完成");
     this.updateSendButton(false);
