@@ -54,6 +54,16 @@ export class EditorAdapter {
   }
 
   /**
+   * 在文件末尾写入用户消息块（含前置空行保证格式正确）
+   */
+  appendUserBlock(block: string): void {
+    const editor = this.view.editor;
+    const content = editor.getValue();
+    const prefix = content.length > 0 && !content.endsWith("\n\n") ? "\n\n" : "";
+    editor.replaceRange(prefix + block + "\n\n", { line: editor.lineCount(), ch: 0 });
+  }
+
+  /**
    * 在文件末尾追加一行（用于 tool use 事件等）
    */
   appendLine(line: string): void {

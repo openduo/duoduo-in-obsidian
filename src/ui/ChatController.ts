@@ -1,9 +1,8 @@
-import { App, MarkdownView, Notice } from "obsidian";
+import { MarkdownView, Notice } from "obsidian";
 import type { OutboxRecord, SessionExecutionEvent } from "@openduo/protocol";
-import type { PluginSettings } from "../types";
-import type { ChatMessage } from "../types";
+import type { PluginSettings, ChatMessage } from "../types";
 import { AgentClient } from "../agent";
-import { ChatUpdater, formatMessageBlock, formatToolUse } from "../markdown";
+import { formatMessageBlock, formatToolUse } from "../markdown";
 import { EditorInputBar } from "./EditorInputBar";
 import { EditorAdapter } from "./EditorAdapter";
 
@@ -16,13 +15,11 @@ export class ChatController {
   private inputBar: EditorInputBar | null = null;
   private adapter: EditorAdapter | null = null;
   private client: AgentClient;
-  private updater: ChatUpdater;
   private settings: PluginSettings;
 
-  constructor(private app: App, settings: PluginSettings) {
+  constructor(settings: PluginSettings) {
     this.settings = settings;
     this.client = new AgentClient(settings);
-    this.updater = new ChatUpdater(app);
 
     this.client.setHandler({
       onStreamStart: () => {
@@ -93,7 +90,7 @@ export class ChatController {
   }
 
   private async handleSend(text: string): Promise<void> {
-    if (!this.view || !this.inputBar) return;
+    if (!this.view || !this.inputBar || !this.adapter) return;
     if (this.client.processing) return;
 
     if (!this.settings.sessionKey) {
@@ -101,24 +98,17 @@ export class ChatController {
       return;
     }
 
-    const editor = this.view.editor;
-    const file = this.view.file;
-    if (!editor || !file) return;
+    if (!this.view.file) return;
 
-    // 清空输入框
     this.inputBar.clearValue();
 
-    // 在编辑器末尾插入用户消息块
     const message: ChatMessage = {
       id: `msg-${Date.now()}`,
       role: "user",
       content: text,
       timestamp: Date.now(),
     };
-    const userBlock = formatMessageBlock(message);
-    const content = editor.getValue();
-    const prefix = content.length > 0 && !content.endsWith("\n\n") ? "\n\n" : "";
-    editor.replaceRange(prefix + userBlock + "\n\n", { line: editor.lineCount(), ch: 0 });
+    this.adapter.appendUserBlock(formatMessageBlock(message));
 
     this.inputBar.setStatus("处理中...", "processing");
     this.inputBar.setProcessing(true);

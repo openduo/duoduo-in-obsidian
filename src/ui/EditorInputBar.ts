@@ -1,4 +1,5 @@
-import { MarkdownView, setIcon } from "obsidian";
+import { setIcon } from "obsidian";
+import type { MarkdownView } from "obsidian";
 
 export type StatusType = "processing" | "error";
 

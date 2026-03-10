@@ -32,7 +32,7 @@ export type AgentEventHandler = {
   /**
    * streaming 结束
    * @param finalText 完整内容
-   * @param hadStreamChunks 是否收到过真实的 stream 分片（false 表示服务端一次性返回，需要客户端打字机效果）
+   * @param hadStreamChunks 是否收到过真实的 stream 分片（false 表示服务端一次性返回整块文本）
    */
   onStreamEnd?: (finalText: string, hadStreamChunks: boolean) => void;
   /** tool use / thought / tool result 事件（来自 payload.data） */

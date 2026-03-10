@@ -11,7 +11,7 @@ export default class AgentChatPlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
 
-    this.controller = new ChatController(this.app, this.settings);
+    this.controller = new ChatController(this.settings);
 
     // 监听活动 leaf 变化，自动附加输入栏到 Markdown 视图
     this.registerEvent(
@@ -71,7 +71,7 @@ export default class AgentChatPlugin extends Plugin {
    */
   private handleActiveLeafChange(leaf: WorkspaceLeaf | null): void {
     if (!leaf) {
-      this.inputBar.detach();
+      this.controller.detach();
       return;
     }
 
