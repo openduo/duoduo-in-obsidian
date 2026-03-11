@@ -1,26 +1,83 @@
 import { MarkdownView } from "obsidian";
 import { formatStreamStart } from "../markdown";
+import { EditorView } from "@codemirror/view";
 
 /**
  * 封装对 MarkdownView.editor 的所有写入操作。
  * 管理流式输出状态（streamingBodyLine、节流渲染），不感知 UI 和网络层。
+ *
+ * 通过 view.editor.cm 直接访问 CodeMirror 6 EditorView，
+ * 使用 scrollSnapshot() effect 来保持滚动位置。
  */
 export class EditorAdapter {
   private streamingBodyLine = -1;
   private pendingText: string | null = null;
   private rafId: number | null = null;
+  /** 记录用户是否正在查看历史内容（滚动不在底部） */
+  private userScrolledUp = false;
+  /** 滚动检测的阈值（距底部多少像素内视为"在底部"） */
+  private readonly scrollThreshold = 50;
 
-  constructor(private view: MarkdownView) {}
+  constructor(private view: MarkdownView) {
+    this.initScroller();
+  }
+
+  /**
+   * 获取 CodeMirror 6 EditorView 实例
+   */
+  private get cm(): EditorView {
+    // @ts-expect-error - Obsidian 未在类型定义中暴露 cm 属性
+    return this.view.editor.cm as EditorView;
+  }
+
+  /**
+   * 初始化 scroller 引用和滚动监听
+   */
+  private initScroller(): void {
+    const tryGetScroller = () => {
+      const scroller = this.view.containerEl.querySelector(".cm-scroller") as HTMLElement | null;
+      if (scroller) {
+        scroller.addEventListener("scroll", () => {
+          const atBottom =
+            scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < this.scrollThreshold;
+          this.userScrolledUp = !atBottom;
+        });
+      } else {
+        setTimeout(tryGetScroller, 100);
+      }
+    };
+    tryGetScroller();
+  }
+
+  /**
+   * 滚动到文档底部
+   */
+  private scrollToBottom(): void {
+    setTimeout(() => {
+      const lastLine = this.cm.state.doc.line(this.cm.state.doc.lines);
+      this.cm.dispatch({
+        effects: EditorView.scrollIntoView(lastLine.to),
+      });
+    }, 0);
+  }
 
   /**
    * 在文件末尾插入 agent 消息 header，并记录 body 起始行
    */
   insertHeader(): void {
-    const editor = this.view.editor;
+    const cm = this.cm;
+    const doc = cm.state.doc;
     const header = formatStreamStart("assistant");
-    editor.replaceRange(header, { line: editor.lineCount(), ch: 0 });
+
+    cm.dispatch(
+      cm.state.update({
+        changes: { from: doc.length, insert: header },
+      })
+    );
+
     // header 占 2 行（角色行 + 空行），body 从最后一行开始
-    this.streamingBodyLine = editor.lineCount() - 1;
+    this.streamingBodyLine = cm.state.doc.lines - 1;
+    this.scrollToBottom();
   }
 
   /**
@@ -57,20 +114,47 @@ export class EditorAdapter {
    * 在文件末尾写入用户消息块（含前置空行保证格式正确）
    */
   appendUserBlock(block: string): void {
-    const editor = this.view.editor;
-    const content = editor.getValue();
+    this.userScrolledUp = false;
+
+    const cm = this.cm;
+    const doc = cm.state.doc;
+    const content = doc.toString();
     const prefix = content.length > 0 && !content.endsWith("\n\n") ? "\n\n" : "";
-    editor.replaceRange(prefix + block + "\n\n", { line: editor.lineCount(), ch: 0 });
+
+    cm.dispatch(
+      cm.state.update({
+        changes: { from: doc.length, insert: prefix + block + "\n\n" },
+      })
+    );
+
+    this.scrollToBottom();
   }
 
   /**
    * 在文件末尾追加一行（用于 tool use 事件等）
    */
   appendLine(line: string): void {
-    const editor = this.view.editor;
-    const content = editor.getValue();
+    const cm = this.cm;
+    const doc = cm.state.doc;
+    const content = doc.toString();
     const prefix = content.length > 0 && !content.endsWith("\n") ? "\n" : "";
-    editor.replaceRange(prefix + line + "\n", { line: editor.lineCount(), ch: 0 });
+
+    if (!this.userScrolledUp) {
+      cm.dispatch(
+        cm.state.update({
+          changes: { from: doc.length, insert: prefix + line + "\n" },
+        })
+      );
+      this.scrollToBottom();
+    } else {
+      const snapshot = cm.scrollSnapshot();
+      cm.dispatch(
+        cm.state.update({
+          changes: { from: doc.length, insert: prefix + line + "\n" },
+        })
+      );
+      cm.dispatch({ effects: snapshot });
+    }
   }
 
   /**
@@ -83,6 +167,7 @@ export class EditorAdapter {
     }
     this.pendingText = null;
     this.streamingBodyLine = -1;
+    this.userScrolledUp = false;
   }
 
   get isStreaming(): boolean {
@@ -91,10 +176,27 @@ export class EditorAdapter {
 
   private writeBodyText(text: string): void {
     if (this.streamingBodyLine < 0) return;
-    const editor = this.view.editor;
-    const lineCount = editor.lineCount();
-    const startPos = { line: this.streamingBodyLine, ch: 0 };
-    const endPos = { line: lineCount - 1, ch: editor.getLine(lineCount - 1).length };
-    editor.replaceRange(text, startPos, endPos);
+
+    const cm = this.cm;
+    const doc = cm.state.doc;
+    const startLine = doc.line(this.streamingBodyLine + 1); // CM6 line 是 1-indexed
+    const endLine = doc.line(doc.lines);
+
+    if (!this.userScrolledUp) {
+      cm.dispatch(
+        cm.state.update({
+          changes: { from: startLine.from, to: endLine.to, insert: text },
+        })
+      );
+      this.scrollToBottom();
+    } else {
+      const snapshot = cm.scrollSnapshot();
+      cm.dispatch(
+        cm.state.update({
+          changes: { from: startLine.from, to: endLine.to, insert: text },
+        })
+      );
+      cm.dispatch({ effects: snapshot });
+    }
   }
 }
