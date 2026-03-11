@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-03-11
+
+### Fixed
+- Ensure agent replies are never lost when switching away from Obsidian and back.
+- Keep message ordering correct when switching files or panes within the same leaf.
+
+### Changed
+- Re-attach the chat input and session when the active file changes in the current leaf.
+
 ## [0.1.3] - 2026-03-11
 
 ### Fixed

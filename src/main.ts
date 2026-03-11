@@ -24,6 +24,14 @@ export default class AgentChatPlugin extends Plugin {
       })
     );
 
+    // 监听文件切换：同一个 leaf 内切换文件时 MarkdownView 引用可能不变
+    this.registerEvent(
+      this.app.workspace.on("file-open", () => {
+        const leaf = this.app.workspace.activeLeaf;
+        if (leaf) this.handleActiveLeafChange(leaf);
+      })
+    );
+
     // 初始检查当前活动视图
     this.app.workspace.onLayoutReady(() => {
       const activeLeaf = this.app.workspace.activeLeaf;

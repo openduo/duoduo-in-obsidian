@@ -22,8 +22,13 @@ function makeChannelId(notePath: string): string {
  */
 export class ChatController {
   private view: MarkdownView | null = null;
+  private notePath: string | null = null;
   private inputBar: EditorInputBar | null = null;
   private adapter: EditorAdapter | null = null;
+  /** 当前正在进行、但可能还没写入到文档中的 assistant 回复文本（用于 UI 暂不可用时的缓冲） */
+  private pendingAssistantText: string | null = null;
+  /** 缓冲的 assistant 回复对应的笔记路径，只对同一 note 生效，避免写错笔记 */
+  private pendingAssistantNotePath: string | null = null;
   private client: AgentClient;
   private settings: PluginSettings;
   private locale: Locale;
@@ -34,18 +39,11 @@ export class ChatController {
     this.client = new AgentClient(settings);
 
     this.client.setHandler({
-      onStreamStart: () => {
-        this.adapter?.insertHeader();
-      },
-      onMessage: (_record: OutboxRecord, accumulated: string) => {
-        this.adapter?.updateBody(accumulated);
-      },
-      onStreamEnd: (finalText: string, _hadStreamChunks: boolean) => {
-        this.adapter?.finalizeBody(finalText);
-        this.inputBar?.setStatus("");
-        this.inputBar?.setProcessing(false);
-        this.inputBar?.setConnectionStatus("connected");
-      },
+      onStreamStart: () => this.handleStreamStart(),
+      onMessage: (_record: OutboxRecord, accumulated: string) =>
+        this.handleStreamMessage(accumulated),
+      onStreamEnd: (finalText: string, _hadStreamChunks: boolean) =>
+        this.handleStreamEnd(finalText),
       onToolUse: (event: SessionExecutionEvent) => {
         const line = formatToolUse(event);
         if (line) this.adapter?.appendLine(line);
@@ -64,16 +62,55 @@ export class ChatController {
   }
 
   /**
+   * 流式开始：如果 UI 可用，直接插入 header；否则仅记录有一条待写入的 assistant 消息
+   */
+  private handleStreamStart(): void {
+    this.pendingAssistantText = "";
+    this.pendingAssistantNotePath = this.notePath;
+    if (this.adapter) {
+      this.adapter.insertHeader();
+    }
+  }
+
+  /**
+   * 流式过程：UI 不在时仅更新缓冲，UI 在时正常写入 body
+   */
+  private handleStreamMessage(accumulated: string): void {
+    this.pendingAssistantText = accumulated;
+    if (this.adapter) {
+      this.adapter.updateBody(accumulated);
+    }
+  }
+
+  /**
+   * 流式结束：UI 不在时把最终文本缓存在内存中，待视图恢复后补写到文档；
+   * UI 在时正常 finalize。
+   */
+  private handleStreamEnd(finalText: string): void {
+    this.pendingAssistantText = finalText;
+    if (this.adapter) {
+      this.adapter.finalizeBody(finalText);
+      this.pendingAssistantText = null;
+      this.pendingAssistantNotePath = null;
+    }
+    this.inputBar?.setStatus("");
+    this.inputBar?.setProcessing(false);
+    this.inputBar?.setConnectionStatus("connected");
+  }
+
+  /**
    * 将输入栏附加到 Markdown 视图。
    * channel_id 和 consumer_id 从笔记文件路径自动派生，每个笔记独立会话。
    */
   attachToMarkdownView(view: MarkdownView): void {
-    if (this.view === view && this.inputBar) return;
+    const filePath = view.file?.path ?? "untitled";
+    // 同一 MarkdownView 里切换文件时，view 引用可能不变；必须以 filePath 为准同步会话
+    if (this.view === view && this.inputBar && this.notePath === filePath) return;
 
     this.detach();
     this.view = view;
+    this.notePath = filePath;
 
-    const filePath = view.file?.path ?? "untitled";
     // per-note session key：obsidian:md5{notePath}
     this.client.setSessionKeyForNote(filePath);
     // channel_id / consumer_id 使用清洗后的 notePath，满足 [A-Za-z0-9_-]{1,128}
@@ -86,7 +123,16 @@ export class ChatController {
     this.inputBar = new EditorInputBar(this.locale);
     this.inputBar.onSend = (text) => this.handleSend(text);
     this.inputBar.mount(view);
+    this.inputBar.clearValue();
     this.inputBar.setStatus(t(this.locale, "status.ready"));
+
+    // 如果在 UI 不可用期间已经收到了完整的 assistant 回复，且仍然是同一篇笔记，这里补写一次，避免漏消息
+    if (this.pendingAssistantText != null && this.pendingAssistantNotePath === this.notePath) {
+      this.adapter.insertHeader();
+      this.adapter.finalizeBody(this.pendingAssistantText);
+      this.pendingAssistantText = null;
+      this.pendingAssistantNotePath = null;
+    }
 
     // 异步检测 daemon 连接状态，完成前显示 checking
     this.client.checkHealth().then((ok) => {
@@ -103,6 +149,7 @@ export class ChatController {
     this.inputBar?.destroy();
     this.inputBar = null;
     this.view = null;
+    this.notePath = null;
     this.client.stop();
   }
 
