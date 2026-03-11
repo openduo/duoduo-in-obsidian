@@ -13,6 +13,7 @@ export class EditorAdapter {
   private streamingBodyLine = -1;
   private pendingText: string | null = null;
   private rafId: number | null = null;
+  private scrollerRetryTimer: ReturnType<typeof setTimeout> | null = null;
   /** 记录用户是否正在查看历史内容（滚动不在底部） */
   private userScrolledUp = false;
   /** 滚动检测的阈值（距底部多少像素内视为"在底部"） */
@@ -37,13 +38,14 @@ export class EditorAdapter {
     const tryGetScroller = () => {
       const scroller = this.view.containerEl.querySelector(".cm-scroller") as HTMLElement | null;
       if (scroller) {
+        this.scrollerRetryTimer = null;
         scroller.addEventListener("scroll", () => {
           const atBottom =
             scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < this.scrollThreshold;
           this.userScrolledUp = !atBottom;
         });
       } else {
-        setTimeout(tryGetScroller, 100);
+        this.scrollerRetryTimer = setTimeout(tryGetScroller, 100);
       }
     };
     tryGetScroller();
@@ -161,6 +163,10 @@ export class EditorAdapter {
    * 取消所有进行中的渲染（视图切换或插件卸载时调用）
    */
   reset(): void {
+    if (this.scrollerRetryTimer !== null) {
+      clearTimeout(this.scrollerRetryTimer);
+      this.scrollerRetryTimer = null;
+    }
     if (this.rafId !== null) {
       window.cancelAnimationFrame(this.rafId);
       this.rafId = null;

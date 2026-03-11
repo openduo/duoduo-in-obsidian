@@ -3,7 +3,36 @@ import type { SessionExecutionEvent } from "@openduo/protocol";
 
 const USER_BLOCKQUOTE_PATTERN = /^> \*\*You\*\*/;
 const AGENT_ROLE_PATTERN = /^\*\*Agent\*\*/;
-const TIMESTAMP_PATTERN = /·\s*(\d{1,2}:\d{2})/;
+const TIMESTAMP_PATTERN = /·\s*(\d{1,2}\/\d{1,2}\s+\d{1,2}:\d{2})/;
+
+/**
+ * 格式化时间戳为 MM/DD HH:mm 格式
+ */
+function formatTimestamp(date: Date): string {
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  return `${month}/${day} ${hours}:${minutes}`;
+}
+
+/**
+ * 解析时间戳字符串
+ */
+function parseTimestamp(tsStr: string): number {
+  // 格式: MM/DD HH:mm
+  const match = tsStr.match(/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})/);
+  if (match) {
+    const [, month, day, hours, minutes] = match.map(Number);
+    const now = new Date();
+    const year = now.getFullYear();
+    const parsedDate = new Date(year, month - 1, day, hours, minutes);
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate.getTime();
+    }
+  }
+  return Date.now();
+}
 
 /**
  * 解析 blockquote 格式的用户消息
@@ -20,16 +49,11 @@ function parseUserBlockquote(
   let timestamp = Date.now();
   let id = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  // 解析角色和时间戳行：> **You** · 10:05
+  // 解析角色和时间戳行：> **You** · 03/11 10:05
   const roleLine = lines[i];
   const tsMatch = roleLine.match(TIMESTAMP_PATTERN);
   if (tsMatch) {
-    const [hours, minutes] = tsMatch[1].split(":").map(Number);
-    const now = new Date();
-    const parsedDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
-    if (!isNaN(parsedDate.getTime())) {
-      timestamp = parsedDate.getTime();
-    }
+    timestamp = parseTimestamp(tsMatch[1]);
   }
   i++;
 
@@ -89,16 +113,11 @@ function parseAgentPlain(
   let timestamp = Date.now();
   let id = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  // 解析角色和时间戳行：**Agent** · 10:05
+  // 解析角色和时间戳行：**Agent** · 03/11 10:05
   const roleLine = lines[i];
   const tsMatch = roleLine.match(TIMESTAMP_PATTERN);
   if (tsMatch) {
-    const [hours, minutes] = tsMatch[1].split(":").map(Number);
-    const now = new Date();
-    const parsedDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
-    if (!isNaN(parsedDate.getTime())) {
-      timestamp = parsedDate.getTime();
-    }
+    timestamp = parseTimestamp(tsMatch[1]);
   }
   i++;
 
@@ -186,16 +205,15 @@ export function parseChatFromMarkdown(content: string): ChatSession {
  * Agent 消息：plain text 格式
  */
 export function formatMessageBlock(message: ChatMessage): string {
-  const timestamp = new Date(message.timestamp);
-  const timeStr = `${timestamp.getHours().toString().padStart(2, "0")}:${timestamp.getMinutes().toString().padStart(2, "0")}`;
+  const timeStr = formatTimestamp(new Date(message.timestamp));
 
   if (message.role === "user") {
     // 用户消息：blockquote 格式
     const lines = message.content.split("\n");
     const quotedContent = lines.map((line) => `> ${line}`).join("\n");
-    return `> **You** · ${timeStr}\n>\n${quotedContent}`;
+    return `> **You** · ${timeStr}\n${quotedContent}`;
   } else {
-    // Agent 消息：plain text 格式
+    // Agent 消息：plain text 格式，标题和内容之间有空行
     return `**Agent** · ${timeStr}\n\n${message.content}`;
   }
 }
@@ -204,11 +222,10 @@ export function formatMessageBlock(message: ChatMessage): string {
  * 格式化流式开始标记（只输出 header，body 留空供 append）
  */
 export function formatStreamStart(role: MessageRole): string {
-  const timestamp = new Date();
-  const timeStr = `${timestamp.getHours().toString().padStart(2, "0")}:${timestamp.getMinutes().toString().padStart(2, "0")}`;
+  const timeStr = formatTimestamp(new Date());
 
   if (role === "user") {
-    return `> **You** · ${timeStr}\n>\n`;
+    return `> **You** · ${timeStr}\n> `;
   } else {
     return `**Agent** · ${timeStr}\n\n`;
   }

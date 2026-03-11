@@ -164,33 +164,70 @@
 
 /* Agent Chat 消息格式样式 */
 
-/* 用户消息：blockquote 中的角色标签使用蓝色 */
-.markdown-source-view.mod-cm6 .cm-content blockquote p:first-child strong,
-.markdown-preview-view blockquote p:first-child strong {
-  color: var(--color-blue);
+/* 用户消息：Live Preview 模式下的 blockquote 样式 */
+.markdown-source-view.mod-cm6.is-live-preview .HyperMD-quote {
+  background: var(--background-secondary-alt);
+  border-left: 3px solid var(--interactive-accent);
+  margin-left: 0;
+  margin-right: 0;
+  padding: var(--size-4-2) var(--size-4-3);
+  padding-left: calc(var(--size-4-3) + 3px);
+  text-indent: 0;
+  width: 100%;
+}
+
+/* 确保 blockquote 内容对齐 */
+.markdown-source-view.mod-cm6.is-live-preview .HyperMD-quote .cm-quote {
+  padding-left: 0;
+}
+
+/* blockquote 第一行：顶部圆角 */
+.markdown-source-view.mod-cm6.is-live-preview .HyperMD-quote:first-of-type,
+.markdown-source-view.mod-cm6.is-live-preview :not(.HyperMD-quote) + .HyperMD-quote {
+  border-top-left-radius: var(--radius-s);
+  border-top-right-radius: var(--radius-s);
+}
+
+/* blockquote 最后一行：底部圆角 */
+.markdown-source-view.mod-cm6.is-live-preview .HyperMD-quote:last-of-type,
+.markdown-source-view.mod-cm6.is-live-preview .HyperMD-quote:not(:has(+ .HyperMD-quote)) {
+  border-bottom-left-radius: var(--radius-s);
+  border-bottom-right-radius: var(--radius-s);
+}
+
+/* 用户消息：Reading 模式下的 blockquote 样式（与 Live Preview 保持一致） */
+.markdown-preview-view blockquote {
+  background: var(--background-secondary-alt);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: var(--radius-s);
+  margin-left: 0;
+  margin-right: 0;
+  width: 100%;
+  padding: var(--size-4-2) var(--size-4-3);
+  padding-left: calc(var(--size-4-3) + 3px);
+}
+
+/* 用户消息：角色标签样式 - Live Preview */
+.markdown-source-view.mod-cm6.is-live-preview .HyperMD-quote .cm-strong {
+  color: var(--interactive-accent);
   font-weight: var(--font-bold);
 }
 
-/* Agent 消息：角色标签样式 */
-.markdown-source-view.mod-cm6 .cm-content p:has(strong:contains("Agent")),
-.markdown-preview-view p:has(strong:contains("Agent")) {
-  margin-top: var(--size-4-3);
-  margin-bottom: var(--size-4-1);
-}
-
-.markdown-preview-view p:has(strong:contains("Agent")) strong {
-  color: var(--text-normal);
+/* 用户消息：角色标签样式 - Reading */
+.markdown-preview-view blockquote p:first-child strong {
+  color: var(--interactive-accent);
   font-weight: var(--font-bold);
 }
 
 /* 减小消息之间的间距 */
-.markdown-preview-view blockquote + p:has(strong:contains("Agent")),
-.markdown-preview-view p:has(strong:contains("Agent")) + blockquote {
+.markdown-preview-view blockquote + p,
+.markdown-preview-view p + blockquote {
   margin-top: var(--size-4-2);
 }
 
 /* Tool use 事件样式（blockquote 中的斜体） */
-.markdown-preview-view blockquote p em {
+.markdown-preview-view blockquote p em,
+.markdown-source-view.mod-cm6.is-live-preview .HyperMD-quote .cm-em {
   color: var(--text-muted);
   font-style: italic;
 }
